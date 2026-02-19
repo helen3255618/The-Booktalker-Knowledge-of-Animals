@@ -5,7 +5,7 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    // 解析请求体（可能会抛出）
+    // 解析请求体（可能会抛出
     const payload = await req.json();
     const { history, message, systemInstruction } = payload ?? {};
 
