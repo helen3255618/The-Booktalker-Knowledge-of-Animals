@@ -5,100 +5,50 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    // 解析请求体（可能会抛出
-    const payload = await req.json();
-    const { history, message, systemInstruction } = payload ?? {};
+    const { history, message, systemInstruction } = await req.json();
 
-    // 基本参数校验
-    if (!message && (!history || !Array.isArray(history))) {
-      const msg = 'Invalid request: missing "message" and "history".';
-      console.error(msg, { payloadSample: JSON.stringify(payload).slice(0, 200) });
-      return new Response(JSON.stringify({ error: msg }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 读取并校验 API Key
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      const msg = 'API_KEY environment variable not set';
-      console.error(msg);
-      return new Response(JSON.stringify({ error: msg }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response("API_KEY environment variable not set", { status: 500, statusText: "API Key not found" });
     }
 
-    // 仅记录是否存在及长度（避免泄露密钥）
-    console.log('API_KEY set:', true);
+    // 添加日志验证 API Key
+    console.log('API_KEY is set:', !!apiKey);
     console.log('API_KEY length:', apiKey.length);
 
-    // 初始化 SDK
-    let ai: any;
-    try {
-      ai = new GoogleGenAI({ apiKey });
-      console.log('GoogleGenAI initialized');
-    } catch (initErr) {
-      console.error('GoogleGenAI initialization failed', initErr);
-      return new Response(JSON.stringify({ error: 'Failed to initialize GoogleGenAI client' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const ai = new GoogleGenAI({ apiKey });
+    console.log('GoogleGenAI initialized successfully');
 
     const contents: Content[] = [
       ...(history || []),
       { role: 'user', parts: [{ text: message }] }
     ];
 
-    // 支持通过环境变量切换模型（方便调试/降级）
-    const model = process.env.GENAI_MODEL || 'gemini-2.5-flash';
-    console.log('Using model:', model);
+    console.log('Calling generateContentStream with model: gemini-2.5-flash');
 
-    // 调用生成流
-    let stream: AsyncIterable<any>;
-    try {
-      stream = await ai.models.generateContentStream({
-        model,
-        contents,
-        config: {
-          systemInstruction: systemInstruction,
-        },
-      });
-      console.log('generateContentStream returned');
-    } catch (genErr) {
-      console.error('generateContentStream error:', genErr);
-      const messageText = (genErr && genErr.message) ? genErr.message : 'Error calling generateContentStream';
-      return new Response(JSON.stringify({ error: messageText }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const stream = await ai.models.generateContentStream({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+      },
+    });
 
-    // 将 SDK 的异步流包装为可读流返回给前端
+    console.log('Stream generated successfully');
+
     const readableStream = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of stream) {
-            try {
-              const text = chunk?.text;
-              if (text) {
-                controller.enqueue(new TextEncoder().encode(text));
-              }
-            } catch (innerChunkErr) {
-              console.error('Error processing chunk:', innerChunkErr);
-              // 如果单个 chunk 处理失败，继续尝试下一个 chunk
+            const text = chunk.text;
+            if (text) {
+              controller.enqueue(new TextEncoder().encode(text));
             }
           }
           controller.close();
-        } catch (streamErr) {
-          console.error('Stream iteration error:', streamErr);
-          try {
-            controller.error(streamErr);
-          } catch (cErr) {
-            console.error('controller.error failed:', cErr);
-          }
+        } catch (streamError) {
+          console.error('Stream processing error:', streamError);
+          controller.error(streamError);
         }
       },
     });
@@ -108,17 +58,21 @@ export async function POST(req: Request) {
     });
 
   } catch (error) {
-    // 捕获任意未处理异常并返回结构化错误（便于前端显示和 Vercel 日志）
-    const message = error instanceof Error ? error.message : JSON.stringify(error);
-    const stack = error instanceof Error && error.stack ? error.stack : undefined;
+    // 更详细的错误日志
+    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+    
+    console.error('API Error:', {
+      message: errorMessage,
+      stack: errorStack,
+      type: error?.constructor?.name,
+    });
 
-    // 详细日志（Vercel runtime logs）
-    console.error('Unhandled Chat API error:', { message, stack });
-
-    // 返回 JSON 格式错误，前端可读取 body 获取详细信息
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    // 返回更详细的错误信息到客户端
+    const responseMessage = `Error: ${errorMessage}`;
+    return new Response(responseMessage, { 
+      status: 500, 
+      statusText: 'Internal Server Error'
     });
   }
 }
