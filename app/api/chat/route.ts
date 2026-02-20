@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     console.log('Calling generateContentStream with model/gemini-2.5-flash');
 
     const stream = await ai.models.generateContentStream({
-      model: 'gemini-2.5-flash',
+      model: 'model/gemini-2.5-flash',
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
