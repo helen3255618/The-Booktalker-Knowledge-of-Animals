@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       { role: 'user', parts: [{ text: message }] }
     ];
 
-    console.log('Calling generateContentStream with model: gemini-2.5-flash');
+    console.log('Calling generateContentStream with model/gemini-2.5-flash');
 
     const stream = await ai.models.generateContentStream({
       model: 'gemini-2.5-flash',
